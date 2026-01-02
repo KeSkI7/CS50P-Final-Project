@@ -20,29 +20,36 @@ def main():
     validate_percentage(args.ram, "RAM")
 
     if args.times > 0:
-            write_and_save(f"--- Monitoring started: {args.times} cycles ---")
-
+        write_and_save(f"--- Monitoring started: {args.times} cycles ---")
+        try:
             for i in range(args.times):
-                    start_time = time.time()
-                    start_for_disk = psutil.disk_io_counters(perdisk=True)
-                    temp_check_cpu = check_cpu(args.cpu)
-                    temp_check_ram = check_ram(args.ram)
-                    write_and_save(f"{log_check_component(temp_check_cpu, 'CPU')}, limit: {args.cpu:.2f}%")
-                    write_and_save(f"{log_check_component(temp_check_ram, 'RAM')}, limit: {args.ram:.2f}%")
-                    end_for_disk = psutil.disk_io_counters(perdisk=True)
-                    end_time = time.time()
-                    time_delta = end_time - start_time
-                    temp_check_disks = check_disks_speed(start_for_disk, end_for_disk, time_delta)
-                    log_check_disks_speed(temp_check_disks, args.disks)
-                    if i+1 == args.times:
-                        write_and_save("--- Monitoring finished ---")
-                        break
-                    write_and_save(f"-" * 40)
-                    time.sleep(14)
+                start_time = time.time()
+                start_for_disk = psutil.disk_io_counters(perdisk=True)
+                temp_check_cpu = check_cpu(args.cpu)
+                temp_check_ram = check_ram(args.ram)
+                write_and_save(f"{log_check_component(temp_check_cpu, 'CPU')}, limit: {args.cpu:.2f}%")
+                write_and_save(f"{log_check_component(temp_check_ram, 'RAM')}, limit: {args.ram:.2f}%")
+                end_for_disk = psutil.disk_io_counters(perdisk=True)
+                end_time = time.time()
+                time_delta = end_time - start_time
+                temp_check_disks = check_disks_speed(start_for_disk, end_for_disk, time_delta)
+                log_check_disks_speed(temp_check_disks, args.disks)
+                if i+1 == args.times:
+                    write_and_save("--- Monitoring finished ---")
+                    break
+                write_and_save(f"-" * 40)
+                time.sleep(14)
+        except KeyboardInterrupt:
+            write_and_save("[Info] Monitoring stopped by user.")
     else:
         raise ValueError("Program must be executed at least 1 time!")
 
 def write_and_save(text):
+    """
+    Prints a message to the console and appends it to a log file if configured.
+    
+    :param text: The message to print and save.
+    """
     print(text)
     if LOGS_FILE is not None:
         try:
@@ -52,24 +59,60 @@ def write_and_save(text):
             print(f"[Error] Could not save file {e}")
 
 def validate_percentage(value, name):
+    """
+    Validates that a given value is a percentage between 0 and 100.
+
+    If the value is invalid, the program terminates immediately.
+    
+    :param value: The number to  check
+    :param name: The name of component
+    :raise SystemExit: If the value is less than 0 or greater than 100.
+    """
     if value > 100 or value < 0:
         sys.exit(f"[Error] {name} limit must be between 0 and 100. Provided {value}")
     return True
 
 def check_cpu(threshold):
+    """
+    Measures the system CPU usage over a 1-second interval.
+    
+    :param threshold: The limit percentage to check against.
+    :return: A tuple (is_over_limit, current_usage)
+    """
     usage = psutil.cpu_percent(interval=1)
     return usage > threshold, usage
 
 def log_check_component(values, name):
+    """
+    Formats a standard log string for a component
+    
+    :param values: Tuple containing (bool: is_alert, float: usage_value).
+    :param name: Name of component
+    :return: A formatted string ready for logging.
+    """
     if values[0]:
         return f"[WARN] {name} usage is {values[1]:.2f}% at {time.strftime('%H:%M:%S %d %b %Y')}"
     return f"[OK] {name} usage is {values[1]:.2f}% at {time.strftime('%H:%M:%S %d %b %Y')}"
 
 def check_ram(threshold):
+    """
+    Checks the current system RAM usage.
+    
+    :param threshold: The limit percentage to check against.
+    :return: A tuple containing bool and float
+    """
     usage = psutil.virtual_memory().percent
     return usage > threshold, usage
 
 def check_disks_speed(start, end, duration):
+    """
+    Calculates read/write speeds for disks based on counter snapshots.
+    
+    :param start: Dictionary of disk I/O counters at the start.
+    :param end: Dictionary of disk I/O counters at the end.
+    :param duration: Time elapsed in seconds between checks.
+    :return: List of dictionaries with calculated speeds (read, write, total) in MB/s.
+    """
     disks_info = []
     common_disks = set(start.keys()) & set(end.keys())
     common_disks = sorted(common_disks)
@@ -89,6 +132,13 @@ def check_disks_speed(start, end, duration):
     return disks_info
 
 def log_check_disks_speed(disks, threshold):
+    """
+    Logs the speed of each disk and checks against the threshold.
+
+    :param disks: List of disk dictionaries (from check_disks_speed).
+    :param threshold: The speed limit in MB/s for the alert.
+    :return: Empty string.
+    """
     for disk in disks:
         if disk["total"] >= threshold:
             write_and_save(f"[WARN] Disk {disk['name']:<15} | Total usage is {disk['total']:6.2f} MB/s | {time.strftime('%H:%M:%S %d %b %Y')} | Read: {disk['read']:.2f} MB/s | Write: {disk['write']:.2f} MB/s")
